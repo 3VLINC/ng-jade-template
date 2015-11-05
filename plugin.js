@@ -2,33 +2,45 @@ var minify = Npm.require('html-minifier').minify;
 var jade = Npm.require('jade');
 var jadeOpts = {pretty:true, compileDebug:false};
 
-Plugin.registerSourceHandler('ng.jade', {
-  isTemplate: true,
-  archMatching: 'web'
-}, function(compileStep) {
-  var contents = compileStep.read().toString('utf8');
-  jadeOpts.filename = compileStep.fullInputPath;
-  contents = jade.compile(contents, jadeOpts)();
+function NGJadeCompiler() {};
 
-  var newPath = compileStep.inputPath;
-  newPath = newPath.replace(/\\/g, "/");
-  newPath = newPath.replace(".ng.jade", ".html");
+NGJadeCompiler.prototype.processFilesForTarget = function(files) {
 
-  var results = 'angular.module(\'angular-meteor\').run([\'$templateCache\', function($templateCache) {' +
-    '$templateCache.put(\'' + newPath + '\', \'' +
-      minify(contents.replace(/'/g, "\\'"), {
-        collapseWhitespace : true,
-        conservativeCollapse : true,
-        removeComments : true,
-        minifyJS : true,
-        minifyCSS: true,
-        processScripts : ['text/ng-template']
-      }) + '\');' +
-    '}]);';
+  files.forEach(function(file) {
+    
+    var outputFilePath = file.getPathInPackage().replace(file.getExtension(), 'tpl.js');
+    var templateCachePath = file.getPathInPackage().replace(file.getExtension(), 'html');
 
-  compileStep.addJavaScript({
-    path : newPath,
-    data : results.replace(/\n/g, '\\n'),
-    sourcePath : compileStep.inputPath
+    contents = jade.compile(file.getContentsAsString().toString('utf8'), jadeOpts)();
+
+    // process and add the output
+    var output = 'angular.module(\'splendr.templates\').run([\'$templateCache\', function($templateCache) {' +
+      '$templateCache.put(\''+templateCachePath+'\',\''+
+        minify(contents.replace(/'/g, "\\'"), {
+            collapseWhitespace : true,
+            conservativeCollapse : true,
+            removeComments : true,
+            minifyJS : true,
+            minifyCSS: true,
+            processScripts : ['text/ng-template']
+          })
+        +'\');' +
+      '}]);';
+
+    file.addJavaScript({
+      data: output,
+      path: outputFilePath
+    });
   });
-});
+};
+
+
+Plugin.registerCompiler(
+   {
+    extensions: ['ng.tpl'],
+    filenames:[]
+   },
+   function() {
+    return new NGJadeCompiler();
+   }
+);
